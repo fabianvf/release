@@ -91,7 +91,7 @@ def value(job, build_log=None):
     return (stop - start).total_seconds() / 60.
 
 
-color_map = matplotlib.cm.get_cmap('Set1', 2*len(args.regexps))  # 2* so we stay in the dark end
+color_map = matplotlib.cm.get_cmap('tab20', len(args.regexps))  # 2* so we stay in the dark end
 no_match_color = [0, 0, 1, 0.3]
 success_color = [0, 1, 0, 0.3]
 def color(job, build_log=None, links=None):
@@ -113,7 +113,7 @@ def color(job, build_log=None, links=None):
         if match:
             if links is not None:
                 links[match.group(0)][pull_uri(job=job)].append(job)
-            return color_map(float(i) / len(regexps))
+            return color_map(i)
     return no_match_color
 
 
@@ -219,8 +219,8 @@ entries.sort(key=lambda entry: entry['started'])
 #]
 
 # FIXME: adjust to match color()
-# for f in [e for e in entries if e['color'] == no_match_color]:
-#     print(f['url'])
+for f in [e for e in entries if e['color'] == no_match_color]:
+    print(f['url'])
 no_match_failures = len([e for e in entries if e['color'] == no_match_color])
 successes = len([e for e in entries if e['color'] == success_color])
 failures = len(entries) - successes
@@ -232,8 +232,9 @@ for i, regexp in enumerate(regexps):
     match_failures.append(count)
     legend_entries.append((
         match_color,
-        '{} ({}% of all failures) {!r}'.format(
+        '{} ({}% of jobs, {}% of failures) {!r}'.format(
             count,
+            count * 100 // (failures + successes),
             count * 100 // failures,
             regexp.pattern,
         ),
@@ -241,8 +242,9 @@ for i, regexp in enumerate(regexps):
 legend_entries.extend([
     (
         no_match_color,
-        '{} ({}% of all failures) other failures'.format(
+        '{} ({}% of jobs, {}%  of failures) other failures'.format(
             no_match_failures,
+            no_match_failures * 100 // (failures + successes),
             no_match_failures * 100 // failures,
         ),
     ),
@@ -254,6 +256,13 @@ legend_entries.extend([
         ),
     ),
 ])
+
+
+def legend_key(x):
+    return int(x[1].split()[0])
+
+
+legend_entries = sorted(list(filter(lambda x: legend_key(x), legend_entries)), key=legend_key, reverse=True)
 
 legend_handles = []
 for legend_color, label in legend_entries:
@@ -349,6 +358,7 @@ axes.legend(
     legend_handles,
     # Matplotlib's arg parsing is crazy, and requires us to set to positional args to get the first treated as handles
     [h.get_label() for h in legend_handles],
+    bbox_to_anchor=(1.01, 1),
     loc='upper left',
     frameon=False,
 )
