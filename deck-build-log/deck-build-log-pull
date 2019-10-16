@@ -1,6 +1,6 @@
 #!/bin/sh
 
-JOB_SUBSTRING='e2e-aws' &&
+JOB_SUBSTRING='ci-operator-framework-operator-sdk' &&
 BUILD_LOG_CACHE=~/.cache/openshift-deck-build-logs &&
 
 sync() {
@@ -50,17 +50,17 @@ sync() {
 mkdir -p "${BUILD_LOG_CACHE}" &&
 curl https://prow.svc.ci.openshift.org/data.js | jq "[.[] | select (.job | contains(\"${JOB_SUBSTRING}\"))]" >"${BUILD_LOG_CACHE}/jobs.json" &&
 JOBS="$(jq -c ".[] | select(.state == \"failure\")" "${BUILD_LOG_CACHE}/jobs.json")" &&
-OLDEST_TIMESTAMP="$(echo "${JOBS}" | sync | tail -n1)" &&
-if test -n "${OLDEST_TIMESTAMP}"
-then
-	find "${BUILD_LOG_CACHE}" -name job.json | while read JOB_PATH
-	do
-		STARTED="$(jq -r .started "${JOB_PATH}")" &&
-		if test "${STARTED}" -lt "${OLDEST_TIMESTAMP}"
-		then
-			rm -rf "$(dirname "${JOB_PATH}")"
-		fi
-	done &&
+OLDEST_TIMESTAMP="$(echo "${JOBS}" | sync | tail -n1)"
+# if test -n "${OLDEST_TIMESTAMP}"
+# then
+# 	find "${BUILD_LOG_CACHE}" -name job.json | while read JOB_PATH
+# 	do
+# 		STARTED="$(jq -r .started "${JOB_PATH}")" &&
+# 		if test "${STARTED}" -lt "${OLDEST_TIMESTAMP}"
+# 		then
+# 			rm -rf "$(dirname "${JOB_PATH}")"
+# 		fi
+# 	done &&
 
-	find "${BUILD_LOG_CACHE}" -type d -empty -execdir rmdir {} \+
-fi
+# 	find "${BUILD_LOG_CACHE}" -type d -empty -execdir rmdir {} \+
+# fi

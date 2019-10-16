@@ -18,10 +18,11 @@ parser.parse_args()
 
 
 job_regexps = [
-    re.compile('.*-master-e2e-aws$'),
-    re.compile('.*-images$'),
-    re.compile('.*release-.*-origin-.*-e2e-aws.*'), 
-    re.compile('.*release-.*-ocp-.*-e2e-aws.*'),
+    re.compile(".*-ci-operator-framework-operator-sdk-.*")
+    # re.compile('.*-master-e2e-aws$'),
+    # re.compile('.*-images$'),
+    # re.compile('.*release-.*-origin-.*-e2e-aws.*'), 
+    # re.compile('.*release-.*-ocp-.*-e2e-aws.*'),
 ]
 
 uri = 'https://prow.svc.ci.openshift.org/data.js'

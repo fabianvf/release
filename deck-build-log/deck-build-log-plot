@@ -14,6 +14,8 @@ import subprocess
 import urllib
 import urllib2
 
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.cm
 import matplotlib.dates
 import matplotlib.patches
@@ -89,7 +91,7 @@ def value(job, build_log=None):
     return (stop - start).total_seconds() / 60.
 
 
-color_map = matplotlib.cm.get_cmap('autumn', 2*len(args.regexps))  # 2* so we stay in the dark end
+color_map = matplotlib.cm.get_cmap('Set1', 2*len(args.regexps))  # 2* so we stay in the dark end
 no_match_color = [0, 0, 1, 0.3]
 success_color = [0, 1, 0, 0.3]
 def color(job, build_log=None, links=None):
@@ -217,6 +219,8 @@ entries.sort(key=lambda entry: entry['started'])
 #]
 
 # FIXME: adjust to match color()
+# for f in [e for e in entries if e['color'] == no_match_color]:
+#     print(f['url'])
 no_match_failures = len([e for e in entries if e['color'] == no_match_color])
 successes = len([e for e in entries if e['color'] == success_color])
 failures = len(entries) - successes
@@ -295,7 +299,7 @@ if args.repo:
 figure = matplotlib.pyplot.figure()
 figure.set_size_inches(20, 5)
 axes = figure.add_subplot(1, 1, 1)
-axes.set_title('recent e2e-aws builds')  # FIXME: adjust to match value() and color()
+axes.set_title('recent builds')  # FIXME: adjust to match value() and color()
 axes.set_ylabel('job duration (minutes)')  # FIXME: adjust to match value()
 axes.set_xlabel('start time ({} to {} UTC)'.format(start.isoformat(), stop.isoformat()))
 
@@ -368,7 +372,7 @@ if args.bug is not None:
             stop.strftime('%Y-%m-%dT%H:%M'),
         ),
         'content_type': 'image/svg+xml',
-        'comment': '''This occurred in {matches} of our {total} failures ({percent}%) in *-e2e-aws* jobs across the whole CI system over the past {hours} hours.  Generated with [1]:
+        'comment': '''This occurred in {matches} of our {total} failures ({percent}%) in jobs across the whole CI system over the past {hours} hours.  Generated with [1]:
 
   $ deck-build-log-plot {regexp!r}
   {lines}
