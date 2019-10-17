@@ -49,6 +49,12 @@ parser.add_argument(
     '-u', '--max-duration', dest='max_duration', type=int,
     help='Maximum duraftion of a job in seconds.  If unset, defaults to unlimited.'
 )
+
+parser.add_argument(
+    '-d', '--days', dest='days', default=None, type=int,
+    help='Number of days to go back. Defaults to unlimited'
+)
+
 parser.add_argument(
     'regexps', metavar='REGEXP', nargs='+',
     help='Python regular expression for matching build logs.',
@@ -105,9 +111,9 @@ def color(job, build_log=None, links=None):
             return None  # no duration for value()
         if job['state'] == 'failure':
             return None  # non e2e-aws job, so we didn't pull its build log
-        if job['state'] == 'success':
-            return success_color
         raise ValueError(job)
+    if job['state'] == 'success':
+        return success_color
     for i, regexp in enumerate(regexps):
         match = regexp.search(build_log)
         if match:
@@ -121,12 +127,18 @@ cache = os.path.join(os.path.expanduser('~'), '.cache', 'openshift-deck-build-lo
 entries = []
 links = collections.defaultdict(lambda: collections.defaultdict(list))
 
+now = None
 known_urls = set()
 namespace_regexp = re.compile('^.* Using namespace (.*)$')
 for root, _, files in os.walk(cache):
     if 'job.json' in files and 'build-log.txt' in files:
         with open(os.path.join(root, 'job.json'), 'rb') as f:
-            job = json.load(f)
+            try:
+                job = json.load(f)
+            except Exception as e:
+                continue
+        if job['state'] not in ['success', 'failure']:
+            continue
         with open(os.path.join(root, 'build-log.txt'), 'r') as f:
             build_log = f.read()
         for aux in ['clusteroperators.json', 'events.json', 'nodes.json', 'pods.json']:
@@ -145,8 +157,14 @@ for root, _, files in os.walk(cache):
         if job_color is None:
             continue
         start, stop = start_stop(job=job)
+        if now is None or start > now:
+            now = start
+        if stop is not None and stop > now:
+            now = stop
         duration = (stop - start).total_seconds()
         if duration < args.min_duration or (args.max_duration is not None and duration > args.max_duration):
+            continue
+        if args.days and datetime.datetime.now() - start > datetime.timedelta(args.days):
             continue
         entries.append({
             'started': start,
@@ -155,29 +173,29 @@ for root, _, files in os.walk(cache):
             'url': job['url'],
         })
 
-now = None
-with open(os.path.join(cache, 'jobs.json'), 'rb') as f:
-    for job in json.load(f):
-        start, stop = start_stop(job=job)
-        if now is None or start > now:
-            now = start
-        if stop is not None and stop > now:
-            now = stop
-        if job['url'] in known_urls:
-            continue
-        if stop is not None:
-            duration = (stop - start).total_seconds()
-            if duration < args.min_duration or (args.max_duration is not None and duration > args.max_duration):
-                continue
-        job_color = color(job=job, links=links)
-        if job_color is None:
-            continue
-        entries.append({
-            'started': start,
-            'value': value(job=job),
-            'color': job_color,
-            'url': job['url'],
-        })
+# now = None
+# with open(os.path.join(cache, 'jobs.json'), 'rb') as f:
+#     for job in json.load(f):
+#         start, stop = start_stop(job=job)
+#         if now is None or start > now:
+#             now = start
+#         if stop is not None and stop > now:
+#             now = stop
+#         if job['url'] in known_urls:
+#             continue
+#         if stop is not None:
+#             duration = (stop - start).total_seconds()
+#             if duration < args.min_duration or (args.max_duration is not None and duration > args.max_duration):
+#                 continue
+#         job_color = color(job=job, links=links)
+#         if job_color is None:
+#             continue
+#         entries.append({
+#             'started': start,
+#             'value': value(job=job),
+#             'color': job_color,
+#             'url': job['url'],
+#         })
 
 
 pull_lines = []
@@ -232,27 +250,27 @@ for i, regexp in enumerate(regexps):
     match_failures.append(count)
     legend_entries.append((
         match_color,
-        '{} ({}% of jobs, {}% of failures) {!r}'.format(
+        '{} ({:.1f}% of jobs, {:.1f}% of failures) {!r}'.format(
             count,
-            count * 100 // (failures + successes),
-            count * 100 // failures,
+            count * 100.0 / (failures + successes),
+            count * 100.0 / failures,
             regexp.pattern,
         ),
     ))
 legend_entries.extend([
     (
         no_match_color,
-        '{} ({}% of jobs, {}%  of failures) other failures'.format(
+        '{} ({:.1f}% of jobs, {:.1f}%  of failures) other failures'.format(
             no_match_failures,
-            no_match_failures * 100 // (failures + successes),
-            no_match_failures * 100 // failures,
+            no_match_failures * 100.0 / (failures + successes),
+            no_match_failures * 100.0 / failures,
         ),
     ),
     (
         success_color,
-        '{} ({}% of jobs) success'.format(
+        '{} ({:.1f}% of jobs) success'.format(
             successes,
-            successes * 100 // (failures + successes),
+            successes * 100.0 / (failures + successes),
         ),
     ),
 ])
@@ -308,7 +326,36 @@ if args.repo:
 figure = matplotlib.pyplot.figure()
 figure.set_size_inches(20, 5)
 axes = figure.add_subplot(1, 1, 1)
-axes.set_title('recent builds')  # FIXME: adjust to match value() and color()
+
+
+def rate_for_delta(delta):
+    if delta:
+        now = datetime.datetime.now()
+        entries_delta = [e for e in entries if now - e['started'] < delta]
+    else:
+        entries_delta = entries
+
+    successes_delta = len([e for e in entries_delta if e['color'] == success_color])
+    failures_delta = len(entries_delta) - successes_delta
+    rate_delta = successes_delta * 100.0 / (successes_delta + failures_delta)
+    return rate_delta
+
+
+days = args.days or 2
+title_breakdown = []
+for i in range(days):
+    title_breakdown.append(
+        "{:.1f}% over {}h".format(rate_for_delta(datetime.timedelta(i+1)), (i+1)*24)
+    )
+title_breakdown.append("{:.1f}% overall".format(rate_for_delta(None)))
+
+title = "{duration} jobs {hours} (success rate: {breakdown})".format(
+    duration="{}+ minute".format(args.min_duration / 60) if args.min_duration else "all",
+    hours="over the last {} hours".format(args.days * 24) if args.days else "since {}".format(start.isoformat()),
+    breakdown=" | ".join(title_breakdown)
+)
+
+axes.set_title(title)  # FIXME: adjust to match value() and color()
 axes.set_ylabel('job duration (minutes)')  # FIXME: adjust to match value()
 axes.set_xlabel('start time ({} to {} UTC)'.format(start.isoformat(), stop.isoformat()))
 
